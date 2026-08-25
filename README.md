@@ -2,115 +2,125 @@
 
 Turn a dead Bobcat Miner 300 (Helium hotspot) into a network-wide Pi-hole DNS ad-blocker.
 
-Helium hotspot mining stopped being worth the re-registration/token costs for most people a
-while ago, leaving a lot of Bobcat 300 units sitting idle. The hardware itself (a Rockchip
-RK3566 SoC, ~2GB RAM, Ethernet) is perfectly capable of running as a small always-on Debian
-server — this repo turns one into a Pi-hole box, no soldering, no eMMC flashing, fully
-reversible (pull the SD card and it's a stock miner again).
+Helium mining no longer covers its costs for most people. Many Bobcat 300 units now sit idle.
+The hardware still works: a Rockchip RK3566 SoC, ~2GB RAM, and Ethernet. This repo turns one
+into a Pi-hole box. No soldering. No eMMC flashing. Pull the SD card, and it's a stock miner
+again.
 
-There are two ways to get there. **Path A (Debian 13 / Trixie, recommended)** builds a fresh,
-genuinely clean image from scratch — nothing to strip out, because it was never there. **Path B
-(Debian 11 / Bullseye)** uses the original community image directly and runs a cleanup script
-afterward. Path A is more work up front (or a bigger download if you grab the prebuilt image)
-but is the better starting point going forward; Path B is here because it's what this project
-started with, and the underlying image/kernel Path A reuses comes from it.
+## Choose a path
 
-## Requirements (either path)
+| | Path A: Trixie (recommended) | Path B: Bullseye |
+|---|---|---|
+| Debian version | 13 | 11 |
+| How | Fresh image, built from scratch | Community image + cleanup script |
+| Miner stack (Docker, nginx, timers) | Never installed | Installed, then removed |
+| Effort | More setup, or a bigger download | Less setup |
 
-- A Bobcat Miner 300 (tested on a G285; the base image also lists G280/G29x support)
-- A microSD card, 16GB+ Class 10 / UHS-I
-- A USB SD card reader/adapter
-- Ethernet cable from the Bobcat to your router (WiFi is disabled by both paths — see below)
+Both paths share the same bootloader and kernel. Path B is the original base image this
+project started from.
 
-## ⚠️ Known gotcha: use Rufus, not Balena Etcher, to flash images
+## Requirements
 
-Balena Etcher reliably crashes ("writer process ended unexpectedly") writing these images on
-Windows, even after running as Administrator and doing a full clean wipe of the card first.
-The card and the image are not at fault — it's specifically Etcher's on-the-fly `.xz`
-decompression-while-writing path that breaks. **Extract any `.img.xz` first (7-Zip), then flash
-the raw `.img` with [Rufus](https://rufus.ie/) instead** — this wrote cleanly on the first try
-in testing.
+- A Bobcat Miner 300 (tested on a G285; base image also lists G280/G29x)
+- A microSD card, 16GB+, Class 10 / UHS-I
+- A USB SD card reader
+- An Ethernet cable from the Bobcat to your router (both paths disable WiFi)
+
+## Flash the image
+
+Use [Rufus](https://rufus.ie/), not Balena Etcher. Etcher crashes on Windows
+("writer process ended unexpectedly") when it decompresses a `.img.xz` while writing — even as
+Administrator, even on a freshly wiped card. Extract first, then flash the raw `.img`.
+
+1. Extract the `.img.xz` file with 7-Zip.
+2. Open Rufus, select the `.img` file and your SD card, and write it.
 
 ---
 
 ## Path A: Debian 13 (Trixie)
 
-This reuses the exact proven bootloader and kernel (4.19.232) from the original image — that's
-the part that's genuinely hardware-specific and risky to rebuild — but replaces the root
-filesystem with a fresh `debootstrap` of Debian 13. Since it's built from scratch, none of the
-stock miner monitoring stack (Docker, nginx, ~25 self-healing systemd timers) exists in the
-first place. No cleanup script needed.
+Reuses the proven bootloader and kernel (4.19.232) from the original image. Replaces the root
+filesystem with a fresh Debian 13 install. No miner stack to remove, because none is installed.
 
-### Option 1: build it yourself
+### Get the image
 
-Requires a Linux environment (WSL2 works fine on Windows) with `debootstrap`,
-`qemu-user-static`, `binfmt-support`, `parted`, `util-linux`, `gdisk`, `kpartx`, `rsync`
-installed, plus a copy of the original `BobcatDebian285.img` (or matching variant) from
+Option 1 — download a prebuilt image from this repo's
+[Releases](https://github.com/nandyalu/bobcat300-pihole/releases) page.
+
+Option 2 — build it yourself. Requires a Linux environment (WSL2 works on Windows) with these
+packages: `debootstrap`, `qemu-user-static`, `binfmt-support`, `parted`, `util-linux`, `gdisk`,
+`kpartx`, `rsync`. Also requires a copy of `BobcatDebian285.img` (or your board's variant) from
 [sicXnull/Bobcat300-Debian releases](https://github.com/sicXnull/Bobcat300-Debian/releases) —
-Path A's build script pulls the kernel/modules from it but discards the rest.
+the build script takes the kernel and modules from it and discards the rest.
 
+Run the build script (takes a while — it runs Debian's installer under CPU emulation):
 ```
 sudo build/build-trixie-image.sh /path/to/BobcatDebian285.img ./BobcatTrixie.img
 ```
 
-This debootstraps Trixie under `qemu-aarch64` emulation, so expect it to take a while.
+### Set up the device
 
-### Option 2: use a prebuilt image
+Flash `BobcatTrixie.img` to the SD card (see [Flash the image](#flash-the-image) above).
 
-Grab the latest `BobcatTrixie.img.xz` from this repo's
-[Releases](https://github.com/nandyalu/bobcat300-pihole/releases) page.
+Insert the card into the Bobcat, connect Ethernet, and power on. Wait a few minutes for first
+boot — the filesystem expands to fill the card.
 
-### Setup
+Find the device's IP address in your router's DHCP client list (hostname `bobcat`), then
+connect:
+```
+ssh root@<device-ip>          # password: bobcat
+```
 
-1. Flash `BobcatTrixie.img` (extract first if `.xz`) to the SD card with Rufus.
-2. Insert into the Bobcat, connect Ethernet, power on. Give it a few minutes for first boot
-   (filesystem auto-expands to fill the card).
-3. Find its IP (router's DHCP client list — hostname `bobcat`), then SSH in:
-   ```
-   ssh root@<device-ip>          # password: bobcat
-   ```
-4. **Change the root password immediately**: `passwd`. Also worth rotating the SSH host keys
-   (`rm /etc/ssh/ssh_host_*; ssh-keygen -A`) — they're baked into the image at build time (see
-   caveats below), so every copy of this image initially shares the same ones.
-5. Install Pi-hole:
-   ```
-   curl -sSL https://install.pi-hole.net | bash
-   ```
-6. **Restart FTL once after the installer finishes**: `systemctl restart pihole-FTL`. In
-   testing, the installer starts FTL *before* the gravity (blocklist) database finishes
-   building, so FTL can end up serving its stale near-empty initial state — blocking silently
-   doesn't work, and the web UI shows zero configured adlists, until it's restarted. Verify
-   blocking works before moving on: `dig doubleclick.net @127.0.0.1` should return `0.0.0.0`.
-7. Set a static IP/DHCP reservation for the device on your router, then point your router's DNS
-   setting at it (DHCP/LAN settings) so it applies network-wide.
+Change the root password:
+```
+passwd
+```
+
+Rotate the SSH host keys. The image ships with keys baked in at build time, so every copy
+starts out with the same ones:
+```
+rm /etc/ssh/ssh_host_*; ssh-keygen -A
+```
+
+Install Pi-hole:
+```
+curl -sSL https://install.pi-hole.net | bash
+```
+
+Restart FTL. The installer starts it before the blocklist database finishes building, so it
+serves an empty blocklist until you restart it:
+```
+systemctl restart pihole-FTL
+```
+
+Confirm blocking works. This command must return `0.0.0.0`:
+```
+dig doubleclick.net @127.0.0.1
+```
+
+Last step: on your router, give the device a static IP (or DHCP reservation), then set your
+router's DNS server to that IP. This applies Pi-hole to your whole network.
 
 ### Known caveats (Path A)
 
-- **SSH host keys are baked into the image**, not generated fresh per device. This board has no
-  initrd, and systemd's usual first-boot detection (`ConditionFirstBoot`) fundamentally depends
-  on one being present to stage a transient machine-id — so it can't fire here no matter what.
-  Baking in keys at build time was the practical fix; rotate them after first login if that
-  matters to you (see step 4).
-- **No RTC**: this board has no battery-backed real-time clock, so its system clock resets to a
-  stale value on every cold boot until NTP syncs. `systemd-timesyncd` is installed and enabled
-  by the build script specifically to fix this quickly — if you're customizing the build and
-  drop it, expect `apt` to fail with OpenPGP "not live until \<future date\>" signature errors
-  until the clock catches up.
-- This board boots via a U-Boot script (`boot.scr`) that loads the kernel and device tree
-  directly with **no initrd and no GRUB**, despite `/boot/grub` existing on the original image
-  (it's vestigial, never actually invoked). The build script relies on this — don't add an
-  initramfs-based boot step without accounting for it.
-- WiFi (`cywdhd`, Marvell `mwifiex`) and the disabled predictable-network-interface-naming rule
-  assume Ethernet-only use, same as Path B.
+- **SSH host keys are baked into the image.** This board has no initrd, so systemd can't
+  detect first boot and generate fresh keys on its own. Rotate them yourself (see above).
+- **No real-time clock.** The clock resets on every cold boot until NTP syncs. The build script
+  installs and enables `systemd-timesyncd` to fix this quickly. Without it, `apt` fails with
+  OpenPGP "not live until \<future date\>" errors until the clock catches up.
+- **No initrd, no GRUB.** U-Boot's `boot.scr` loads the kernel and device tree directly.
+  `/boot/grub` exists on the image but is never used. Don't add an initramfs-based boot step
+  without accounting for this.
+- **WiFi is disabled.** Both paths assume Ethernet-only use.
 
-### Hardware watchdog (auto-recovery from freezes)
+### Hardware watchdog
 
-Both the build script and `setup.sh` enable this board's real hardware watchdog timer
-(`dw_wdt`) via systemd's native support — nothing extra to do on Path A, it's baked into the
-image. As long as systemd is alive it pets the watchdog automatically; if the box ever hard-hangs
-completely (this happened once during development — stuck totally unresponsive for ~14 hours
-until manually power-cycled), the hardware forces a reboot on its own within about 90 seconds,
-no monitoring required. Verify it's armed any time with:
+Both paths enable this board's hardware watchdog timer (`dw_wdt`) through systemd. If the
+system ever hard-hangs — this happened once during development, for about 14 hours, until
+someone noticed and power-cycled it — the hardware forces a reboot within about 90 seconds. No
+setup needed on Path A; it's already in the image.
+
+Check that it's armed:
 ```
 systemctl show -p WatchdogDevice -p RuntimeWatchdogUSec
 ```
@@ -119,68 +129,84 @@ systemctl show -p WatchdogDevice -p RuntimeWatchdogUSec
 
 ## Path B: Debian 11 (Bullseye) + cleanup script
 
-Uses [sicXnull/Bobcat300-Debian](https://github.com/sicXnull/Bobcat300-Debian)'s image directly,
-then `setup.sh` in this repo strips the stock miner monitoring stack out afterward — including a
-self-healing watchdog that silently resurrects the Helium miner container even after you delete
-it.
+Uses [sicXnull/Bobcat300-Debian](https://github.com/sicXnull/Bobcat300-Debian)'s image
+directly. Then `setup.sh` in this repo removes the stock miner monitoring stack, including a
+self-healing watchdog that silently resurrects the Helium miner container even after you
+delete it.
 
-### Setup
+### Set up the device
 
-1. Download the image matching your Bobcat's variant from the
-   [upstream releases page](https://github.com/sicXnull/Bobcat300-Debian/releases) (check the
-   serial number on the unit — e.g. a S/N containing `285` is the G285 variant).
-2. Extract the `.img.xz` with 7-Zip, then flash the resulting `.img` to your SD card with Rufus.
-3. Insert the card into the Bobcat, connect Ethernet, power on. First boot takes longer than
-   normal (it expands the filesystem to fill the card) — give it 5-10 minutes.
-4. Find its IP address (check your router's DHCP client list), then SSH in:
-   ```
-   ssh root@<device-ip>          # password: bobcat
-   ```
-5. **Immediately change the root password**: `passwd`
-6. Run the cleanup + setup script:
-   ```
-   curl -sSL https://raw.githubusercontent.com/nandyalu/bobcat300-pihole/main/setup.sh | bash
-   ```
-   It'll strip the miner stack (see below) and ask whether to install Pi-hole. Say yes, or run
-   the [official installer](https://install.pi-hole.net) yourself later. Same FTL-restart
-   caveat as Path A step 6 applies here too — verify blocking actually works before moving on.
-7. Once Pi-hole is up, set a static IP/DHCP reservation for the device on your router, then
-   point your router's DNS setting at it (DHCP/LAN settings) so it applies network-wide.
+Download the image matching your Bobcat's variant from the
+[upstream releases page](https://github.com/sicXnull/Bobcat300-Debian/releases). Check the
+serial number on the unit — a S/N containing `285` is the G285 variant.
 
-### What `setup.sh` disables, and why
+Flash the image to the SD card (see [Flash the image](#flash-the-image) above).
+
+Insert the card into the Bobcat, connect Ethernet, and power on. First boot takes 5-10
+minutes — longer than normal, because it expands the filesystem to fill the card.
+
+Find the device's IP address in your router's DHCP client list, then connect:
+```
+ssh root@<device-ip>          # password: bobcat
+```
+
+Change the root password:
+```
+passwd
+```
+
+Run the cleanup and setup script. It removes the miner stack (see table below) and asks
+whether to install Pi-hole — say yes:
+```
+curl -sSL https://raw.githubusercontent.com/nandyalu/bobcat300-pihole/main/setup.sh | bash
+```
+
+Restart FTL. The installer starts it before the blocklist database finishes building, so it
+serves an empty blocklist until you restart it:
+```
+systemctl restart pihole-FTL
+```
+
+Confirm blocking works. This command must return `0.0.0.0`:
+```
+dig doubleclick.net @127.0.0.1
+```
+
+Last step: on your router, give the device a static IP (or DHCP reservation), then set your
+router's DNS server to that IP. This applies Pi-hole to your whole network.
+
+### What `setup.sh` removes
 
 | Component | Why it's removed |
 |---|---|
-| `helium-miner`, `portainer`, `pktfwd` Docker containers | The dead miner itself, a container management UI, and the LoRa packet forwarder — none needed |
-| ~25 stock monitoring `systemd` timers (miner/WiFi/Bluetooth/temp/password/dashboard checks, etc.) | Fire every 15-30 seconds nonstop, forking `sudo`+`docker` processes for no purpose on a repurposed box — pure CPU/RAM churn on a resource-constrained board |
-| `update-miner-check.service` specifically | The self-healing one — silently runs `docker run --privileged ...` to resurrect the miner container if it's ever missing. Must be disabled *before* removing Docker or it just comes back |
-| `nginx` (stock miner dashboard) | Was bound to ports 80/443 bare-metal, colliding with Pi-hole's own web UI |
-| `docker.service` + `docker.socket` | Nothing left needs Docker; stopping the socket too prevents it from being silently relaunched by any leftover `docker` command |
-| WiFi + Bluetooth radios (`rfkill block`) | This setup assumes Ethernet. The vendor WiFi driver spams the kernel log with errors even when idle. Re-enable anytime with `rfkill unblock wifi bluetooth` if you want WiFi instead |
+| `helium-miner`, `portainer`, `pktfwd` Docker containers | The dead miner, a container management UI, and the LoRa packet forwarder — none needed |
+| ~25 stock monitoring `systemd` timers | Fire every 15-30 seconds, forking `sudo`+`docker` processes for no purpose — pure CPU/RAM churn |
+| `update-miner-check.service` | Silently runs `docker run --privileged ...` to resurrect the miner container if it's missing. Disabled before Docker is removed, or it just comes back |
+| `nginx` (stock miner dashboard) | Was bound to ports 80/443, colliding with Pi-hole's web UI |
+| `docker.service` + `docker.socket` | Nothing left needs Docker. Stopping the socket too prevents any leftover `docker` command from relaunching it |
+| WiFi + Bluetooth radios (`rfkill block`) | This setup assumes Ethernet. Re-enable anytime with `rfkill unblock wifi bluetooth` |
 
-### What `setup.sh` also enables
+### What `setup.sh` enables
 
-Removing the stock miner's self-healing watchdog (above) is deliberate — it was resurrecting a
-dead container, not protecting the system. In its place, `setup.sh` enables this board's actual
-*hardware* watchdog timer (`dw_wdt`) via systemd's native support: as long as systemd is alive
-it pets it automatically, and if the box ever hard-hangs completely (seen once during
-development — stuck totally unresponsive for ~14 hours until manually power-cycled), the
-hardware forces a reboot on its own within about 90 seconds. Verify it's armed any time with:
+The hardware watchdog (`dw_wdt`), through systemd. This replaces the stock self-healing
+watchdog removed above — that one resurrected a dead container, this one protects the system.
+If the box ever hard-hangs completely, the hardware forces a reboot within about 90 seconds.
+
+Check that it's armed:
 ```
 systemctl show -p WatchdogDevice -p RuntimeWatchdogUSec
 ```
 
 ### Known caveats (Path B)
 
-- **No RTC**: same as Path A — clock resets to a stale value on every cold boot until NTP
-  syncs a few seconds in. This can confuse boot-relative log queries — use
-  `journalctl --since '<date>' --until '<date>'` with real dates instead of `journalctl -b -1`
-  when debugging this hardware.
-- `setup.sh` is a community script, not an official/supported tool. It only touches the
-  userspace services and Docker layer — it never touches the bootloader, kernel, or partition
-  table, so worst case you can always reflash the SD card from scratch to start over.
-- Helium mining is permanently disabled by either path. If you want to go back to mining, just
-  remove the SD card — the stock firmware on eMMC is untouched.
+- **No real-time clock.** The clock resets on every cold boot until NTP syncs a few seconds
+  in. When checking logs, use `journalctl --since '<date>' --until '<date>'` with real dates
+  instead of `journalctl -b -1`.
+- **`setup.sh` is a community script**, not an official tool. It only touches userspace
+  services and Docker — never the bootloader, kernel, or partition table. Worst case, reflash
+  the SD card to start over.
+- **Helium mining is permanently disabled by either path.** To go back to mining, remove the
+  SD card — the stock firmware on eMMC is untouched.
 
 ## Credits
 
