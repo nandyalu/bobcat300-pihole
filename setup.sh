@@ -47,6 +47,15 @@ echo "== Stopping Docker entirely (not needed once the miner stack is gone) =="
 systemctl stop docker.service docker.socket >/dev/null 2>&1
 systemctl disable docker.service docker.socket >/dev/null 2>&1
 
+echo "== Enabling hardware watchdog (auto-reboot if the box ever freezes solid) =="
+# This board has a real hardware watchdog timer (dw_wdt / DesignWare Watchdog) that
+# systemd can drive natively -- as long as systemd is alive it pets the watchdog
+# automatically, and if the whole system ever hard-hangs (seen once: stuck completely
+# unresponsive for ~14 hours until manually power-cycled), the hardware forces a reboot
+# on its own within about 90 seconds. No monitoring or manual intervention needed.
+sed -i "s/^#RuntimeWatchdogSec=off/RuntimeWatchdogSec=60s/" /etc/systemd/system.conf
+systemctl daemon-reexec >/dev/null 2>&1
+
 echo "== Blocking unused WiFi/Bluetooth radios =="
 # This setup assumes Ethernet. The vendor WiFi driver (dhd, not mainline
 # brcmfmac) spams the kernel log with errors even when unused. Re-enable with

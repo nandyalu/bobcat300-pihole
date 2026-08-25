@@ -103,6 +103,18 @@ Grab the latest `BobcatTrixie.img.xz` from this repo's
 - WiFi (`cywdhd`, Marvell `mwifiex`) and the disabled predictable-network-interface-naming rule
   assume Ethernet-only use, same as Path B.
 
+### Hardware watchdog (auto-recovery from freezes)
+
+Both the build script and `setup.sh` enable this board's real hardware watchdog timer
+(`dw_wdt`) via systemd's native support — nothing extra to do on Path A, it's baked into the
+image. As long as systemd is alive it pets the watchdog automatically; if the box ever hard-hangs
+completely (this happened once during development — stuck totally unresponsive for ~14 hours
+until manually power-cycled), the hardware forces a reboot on its own within about 90 seconds,
+no monitoring required. Verify it's armed any time with:
+```
+systemctl show -p WatchdogDevice -p RuntimeWatchdogUSec
+```
+
 ---
 
 ## Path B: Debian 11 (Bullseye) + cleanup script
@@ -145,6 +157,18 @@ it.
 | `nginx` (stock miner dashboard) | Was bound to ports 80/443 bare-metal, colliding with Pi-hole's own web UI |
 | `docker.service` + `docker.socket` | Nothing left needs Docker; stopping the socket too prevents it from being silently relaunched by any leftover `docker` command |
 | WiFi + Bluetooth radios (`rfkill block`) | This setup assumes Ethernet. The vendor WiFi driver spams the kernel log with errors even when idle. Re-enable anytime with `rfkill unblock wifi bluetooth` if you want WiFi instead |
+
+### What `setup.sh` also enables
+
+Removing the stock miner's self-healing watchdog (above) is deliberate — it was resurrecting a
+dead container, not protecting the system. In its place, `setup.sh` enables this board's actual
+*hardware* watchdog timer (`dw_wdt`) via systemd's native support: as long as systemd is alive
+it pets it automatically, and if the box ever hard-hangs completely (seen once during
+development — stuck totally unresponsive for ~14 hours until manually power-cycled), the
+hardware forces a reboot on its own within about 90 seconds. Verify it's armed any time with:
+```
+systemctl show -p WatchdogDevice -p RuntimeWatchdogUSec
+```
 
 ### Known caveats (Path B)
 

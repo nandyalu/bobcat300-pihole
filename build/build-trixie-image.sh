@@ -132,6 +132,7 @@ grep -q "^PermitRootLogin" /etc/ssh/sshd_config || echo "PermitRootLogin yes" >>
 systemctl enable ssh.service
 systemctl enable systemd-timesyncd.service
 systemctl enable first-boot-resize.service
+sed -i "s/^#RuntimeWatchdogSec=off/RuntimeWatchdogSec=60s/" /etc/systemd/system.conf
 depmod -a '"$KVER"'
 rm -f /etc/ssh/ssh_host_*_key /etc/ssh/ssh_host_*_key.pub
 ssh-keygen -A
