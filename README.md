@@ -208,6 +208,18 @@ systemctl show -p WatchdogDevice -p RuntimeWatchdogUSec
 - **Helium mining is permanently disabled by either path.** To go back to mining, remove the
   SD card — the stock firmware on eMMC is untouched.
 
+## Further investigation (unfinished)
+
+Two side investigations didn't reach a working result, but are documented in detail for anyone
+who wants to continue them:
+
+- [**LED control**](docs/led-control.md) — the front-panel LED's GPIO mapping is fully
+  reverse-engineered, but not controllable from Linux while booting via SD card. Likely fixable
+  only by booting from eMMC (see next).
+- [**eMMC flashing**](docs/emmc-flashing.md) — flashing this image directly to eMMC (no SD card
+  needed) got past two real bugs, then stalled on a third with no working serial console left
+  to diagnose it. SD-boot remains the supported setup.
+
 ## Credits
 
 Base image and kernel/bootloader (both paths):
